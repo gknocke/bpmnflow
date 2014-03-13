@@ -1,10 +1,9 @@
-#usage: perl bpmnflow_v0_1.pl bpmnflow_example.bpmn
+#usage: perl bpmnflow_v0_3.pl bpmnflow_example.bpmn
 
 use strict;
 use warnings;
 use XML::Simple;
 
-my $indentSpace = ' ' x 4;
 my $namespace = '';
 my $descPrefix = '';
 my $i18nPrefix  = 'I18N_OPENXPKI_WF';
@@ -16,30 +15,27 @@ use Moose;
 has type => (is => 'ro', default => 'stateaction');
 has name => (is => 'rw',);
 has resState => (is => 'rw');
-has conditions => (is => 'rw', isa => 'ArrayRef');
+has condition => (is => 'rw', isa => 'ArrayRef');
 no Moose;
 
 sub dump {
 	my $self = shift;
-	my $indent = shift || 0;
-	my @conditionnames = ();
 	my $actionname = $descPrefix."_".$self->{name};
 	my $resState = uc($self->{resState});
-	my @out = ();
-	if (defined $self->{conditions}) {
-		@conditionnames = @{$self->{conditions}};
-	}
 	$actionname =~ s/\s/_/g;
 	$resState =~ s/\s/_/g;
-	push @out, $indentSpace x $indent, '<action name="', $actionname , '" ', "resulting_state=", '"', $resState, '"', "/>", "\n";
-	foreach (@conditionnames) {
-		push @out, $indentSpace x ($indent + 1), '<condition name="', $_ , '"', "/>", "\n";
-	}
-	return @out;
+	my @conditions = grep defined, @{$self->{condition}};
+	my %action =  (
+		name	   		=>	$actionname,
+		resulting_state	=>	$resState,
+		condition		=>	\@conditions
+	);
+	return \%action;
 }
 
 package ObjState;
 use Moose;
+use Data::Dumper;
 has type => (is => 'ro', default => 'state');
 has name => (is => 'rw',);
 has id => (is => 'rw',);
@@ -52,32 +48,18 @@ no Moose;
 
 sub dump {
 	my $self = shift;
-	my $indent = shift || 0;
-	my @out = ();
 	my $name = $self->name;
 	my @conditionnames = ();
 	$name =~ s/\s/_/g;
-	
-	push @out, $indentSpace x $indent++;
-    push @out, '<state name="', $name, '"';
-
-	if (defined $self->{autorun}) {
-		push @out, "\n", $indentSpace x $indent, 'autorun="yes"';
-	}
-	push @out, '>', "\n";
-    push @out, $indentSpace x $indent, '<description>',
-        $i18nPrefix, '_STATE_', uc($descPrefix), '_', $name,
-        '</description>', "\n";
-	if (defined ($self->{action})) {
-		foreach(@{$self->{action}}) {
-			push @out, $_->dump($indent);
-		}
-	}
-
-    $indent--;
-    push @out, $indentSpace x $indent;
-    push @out, '</state>', "\n";
-    return @out;
+    my $description = $i18nPrefix. '_STATE_'. uc($descPrefix). '_'. uc($name);
+    my @actions = map {$_->dump()} grep defined, @{$self->{action}};
+    my %state =  (
+		name	   		=>	$name,
+		autorun			=>	$self->{autorun},
+		description		=>	$description,
+		action			=>	\@actions
+	);
+    return \%state;
 }
 
 package ObjValidator;
@@ -91,35 +73,16 @@ has params => (is => 'rw', isa => 'ArrayRef');
 no Moose;
 
 sub dump {
-	my $self = shift;
-	my $indent = shift || 0;
-	my @out = ();	
+	my $self = shift;	
 	my $name = $namespace . '_' . $self->{name};
 	$name =~ s/\s/_/g;
 	$name =~ s/\?//g;
-	my $class;
-	if ( defined ($self->{class}) ) {
-		$class = $self->{class};
-	}
-	my @params;
-	if (defined $self->params) {
-		@params = @{$self->params};
-	}
-	
-	push @out, $indentSpace x $indent++;
-    push @out, '<validator name="', $name, '"';
-    if (defined $class) {
-		push @out, "\n", $indentSpace x ($indent + 1) , "class=", '"', "$class->[0]", '"';
-	}
-	push @out, ">", "\n";
-	foreach (@params) {
-		push @out, $indentSpace x ($indent + 1) , "<param ", $_, "/>", "\n";
-	}
-	
-    $indent--;
-    push @out, $indentSpace x $indent;
-    push @out, '</validator>', "\n";
-    return @out;
+	my %validator =  (
+		name	   		=>	$name,
+		class			=>	$self->{class},
+#		param			=>	$self->params,
+	);
+    return \%validator;
 }
 
 package ObjCondition;
@@ -135,7 +98,6 @@ no Moose;
 
 sub dump {
 	my $self = shift;
-	my $indent = shift || 0;
 	my $class = "Workflow::Action::Null";
 	if ( defined ($self->{class}) ) {
 		$class = $self->{class};
@@ -144,16 +106,14 @@ sub dump {
 	my $name = $namespace . '_' . $self->{name};
 	$name =~ s/\s/_/g;
 	$name =~ s/\?//g;
-	my @out = ();
-	push @out, $indentSpace x $indent++;
-	push @out, "<condition name=", '"', "$name", '"', "\n";
-	push @out, $indentSpace x ($indent + 1) , "class=", '"', "$class", '"', ">", "\n";
-	while( my ($k, $v) = each %{$self->{plist}} ) {
-		push @out, $indentSpace x $indent , "<param name=", '"', "$k", '" ', "value=", '"', "$v", '"', " />", "\n";
-	}
-	$indent--;
-	push @out, $indentSpace x $indent, "</condition>", "\n";
-	return @out;
+	my %condition =  (
+		name	   		=>	$name,
+		class			=>	$self->{class},
+	);
+	#~ while( my ($k, $v) = each %{$self->{plist}} ) {
+		#~ push @out, $indentSpace x $indent , "<param name=", '"', "$k", '" ', "value=", '"', "$v", '"', " />", "\n";
+	#~ }
+	return \%condition;
 }
 
 package ObjAction;
@@ -163,8 +123,7 @@ has name => (is => 'rw',);
 has id => (is => 'rw',);
 has class => (is => 'rw',);
 has description => (is => 'rw');
-has reqparams => (is => 'rw', isa => 'ArrayRef');
-has optparams => (is => 'rw', isa => 'ArrayRef');
+has params => (is => 'rw', isa => 'ArrayRef');
 has validators => (is => 'rw', isa => 'ArrayRef');
 has condition => (is => 'rw',);
 has targetRef => (is => 'rw',);
@@ -172,53 +131,35 @@ no Moose;
 
 sub dump {
 	my $self = shift;
-	my $indent = shift || 0;
-	my $class = "Workflow::Action::Null";
-	my $description = "test";
-	my @reqparams = ();
-	my @optparams = ();
-	if ( defined ($self->{class}) ) {
-		$class = $self->{class};
-	}
-	if ( defined ($self->{description}) ) {
-		$description = $self->{description};
-	}
-	
-	if (defined $self->reqparams) {
-		@reqparams = @{$self->reqparams};	
-	}
-	
-	if (defined $self->optparams) {
-		@optparams = @{$self->optparams};	
-	}
-	
+	my $class = $self->{class} || "Workflow::Action::Null";
+	my @params = ();
 	my $name = $namespace . '_' . $self->{name};
 	$name =~ s/\s/_/g;
-	my @out = ();
-	push @out, $indentSpace x $indent++;
-	push @out, "<action name=", '"', "$name", '"', "\n";
-	push @out, $indentSpace x ($indent + 1) , "class=", '"', $class, '"', "\n";
-	push @out, $indentSpace x ($indent + 1) , "description=", '"', "$description", '"', ">", "\n";
-	foreach my $param(@reqparams) {
-		push @out, $indentSpace x ($indent + 1) , "<field ", $param, "/>", "\n";
-	}
-	foreach my $param(@optparams) {
-		push @out, $indentSpace x ($indent + 1) , "<field ", $param, "/>", "\n";
-	}
 	
-	foreach (@{$self->{validators}}) {
-		push @out, $indentSpace x ($indent + 1) , '<validator name="', $namespace . '_' . $_->{name}, '"', ">", "\n";
-		if (defined $_->{args}) {
-			foreach (@{$_->{args}}) {
-				push @out, $indentSpace x ($indent + 2) , "<arg>", $_, "</arg>", "\n";
-			}
-		push @out, $indentSpace x ($indent + 1) , "</validator>", "\n";
-		}
-	}
+	my @validator = map {$_->dump()} grep defined, @{$self->{validators}};
+    my %action =  (
+		name	   		=>	$name,
+		class			=>	$class,
+#		field			=>	$self->params,
+		validator		=>	\@validator
+	);
 	
-	$indent--;
-	push @out, $indentSpace x $indent, "</action>", "\n";
-	return @out;
+	#~ foreach my $param(@params) {
+		#~ push @out, $indentSpace x ($indent + 1) , "<field ", $param, "/>", "\n";
+	#~ }
+
+	#~ foreach (@{$self->{validators}}) {
+		#~ push @out, $indentSpace x ($indent + 1) , '<validator name="', $namespace . '_' . $_->{name}, '"', ">", "\n";
+		#~ if (defined $_->{args}) {
+			#~ foreach (@{$_->{args}}) {
+				#~ push @out, $indentSpace x ($indent + 2) , "<arg>", $_, "</arg>", "\n";
+			#~ }
+		#~ push @out, $indentSpace x ($indent + 1) , "</validator>", "\n";
+		#~ }
+	#~ }
+	#~ 
+	#~ push @out, $indentSpace x $indent, "</action>", "\n";
+	return \%action;
 }
 
 package ObjRef;
@@ -227,7 +168,6 @@ has type => (is => 'ro', default => 'flow');
 has id => (is => 'rw',);
 has targetRef => (is => 'rw',);
 no Moose;
-
 
 package Main;
 use Data::Dumper;
@@ -271,7 +211,7 @@ sub handleAction {
 	my $object = ObjStateAction->new();
 	$object->name($action->{name});
 	$object->resState(shift(getNextElements($action->{id}))->{name});
-	$object->conditions($conditions);
+	$object->condition($conditions);
 	push(@{$state->{action}}, $object);
 }
 
@@ -283,7 +223,7 @@ sub handleState {
 	$object->name("null".$state->{counter});
 	$state->counter($state->{counter} + 1);
 	$object->resState($resState->{name});
-	$object->conditions($conditions);
+	$object->condition($conditions);
 	push(@{$state->{action}}, $object);
 	unless (getElementById($object->{name})) {
 		my $action = ObjAction->new;
@@ -336,8 +276,11 @@ sub createStateChilds {
 				handleAction($state, $_);
 			}
 			#if next element is condition
-			else {
+			elsif ($_->{type} eq 'condition') {
 				handleCondition($state, $_);
+			}
+			else {
+				die $_->{type} . " is not allowed after a state (action or condition)";
 			}
 		}
 	}
@@ -424,12 +367,9 @@ sub parseTask {
 			push @{$object->{validators}}, getElementById($validator->{targetRef}->[0]);
 		}	
 	}
-	#this will catch the required and optional parameter. 
-	#currently they are seperated by a single space,
-	# the keyword (required/optional) has to be the first
-	#probably not the most reliable way
+	#this will just pipe the params of the task
 	foreach my $param (@{$task->{ioSpecification}->[0]->{dataInput}}) {
-		push @{$object->{reqparams}}, $param->{name};
+		push @{$object->{params}}, $param->{name};
 	}
 	push @objs, $object;
 }
@@ -452,8 +392,9 @@ sub parseEvent {
 	$object->targetRef($event->{outgoing});
 	if (defined $event->{property}) {
 		my $autorun = $event->{property}->[0]->{name};
-		$autorun = (split (/ /, $autorun))[1];
-		$object->autorun($autorun);
+		if ($autorun eq "autorun yes") {
+			$object->autorun("yes");
+		}
 	}
 
 	push @objs, $object;
@@ -479,6 +420,9 @@ sub parseGateway {
 			my ($name, $value) = split /name |; value /, $param2, 2;
 			${$object->plist}{$name} = $value;
 		}
+		else {
+			die "Gateway documentation has to start with 'class' or 'name'";
+		}
 	}
 	push @objs, $object;
 }
@@ -491,13 +435,10 @@ sub parseIo {
 	$object->id($id);
 	$object->name($name);
 	foreach my $param (@{$dataOutput->{documentation}}) {
-		my @names = split(/ /,$param->{content}, 2);
-		
-		my $key = shift(@names);
-		
-		if ($key eq 'arg') {push @{$object->{args}}, @names}
-		elsif ($key eq 'class') {$object->class(\@names);}
-		elsif ($key eq 'param') {push @{$object->{params}}, @names;}	
+		my ($key, $value) = split(/ /,$param->{content}, 2);
+		if ($key eq 'arg') {push @{$object->{args}}, $value}
+		elsif ($key eq 'class') {$object->class($value);}
+		elsif ($key eq 'param') {push @{$object->{params}}, $value;}	
 		else {die $key, "does not match any valid validador parameter";}
 	}
 
@@ -507,9 +448,8 @@ sub parseIo {
 #main routine starts
 
 use Getopt::Long;
-
+use XML::Simple;
 my ($infile, $outfile, $outtype);
-
 
 my $result = GetOptions(
     "infile=s"    => \$infile,
@@ -519,7 +459,6 @@ my $result = GetOptions(
 );
 
 $infile ||= $ARGV[0];
-#$infile = "testworkflow_1.bpmn";
 
 unless ( open FILE, $infile ) {
     die("Could not open $infile");
@@ -550,17 +489,9 @@ if ( not $outtype or $outtype eq 'actions' ) {
 	my $defName = $outfile
 		|| 'workflow_activity_' . lc($descPrefix) . '.xml';
 	open( DEF, ">$defName" ) or die "Error opening $defName: $!";
-	my $indent = 0;
-	print DEF $imprint, "\n";
-	print DEF $indentSpace x $indent, '<actions>', "\n\n";
-	$indent++;
-
-	foreach my $rec ( grep{defined($_->{type}) && $_->{type} eq 'action'}  @objs) {
-		print DEF $rec->dump($indent), "\n";
-		}
-		
-	$indent--;
-	print DEF $indentSpace x $indent, '</actions>', "\n";
+	print DEF $imprint;
+	my @action = map {$_->dump()} grep{$_->{type} eq 'action'} @objs;
+	print DEF XMLout({action => \@action}, RootName => "actions", SuppressEmpty => 1);
 	close DEF;
 }
 
@@ -569,17 +500,9 @@ if ( not $outtype or $outtype eq 'conditions' ) {
 	my $defName = $outfile
 		|| 'workflow_condition_' . lc($descPrefix) . '.xml';
 	open( DEF, ">$defName" ) or die "Error opening $defName: $!";
-	my $indent = 0;
-	print DEF $imprint, "\n";
-	print DEF $indentSpace x $indent, '<conditions>', "\n\n";
-	$indent++;
-
-	foreach my $rec ( grep{defined($_->{type}) && $_->{type} eq 'condition'}  @objs) {
-		print DEF $rec->dump($indent), "\n";
-		}
-		
-	$indent--;
-	print DEF $indentSpace x $indent, '</conditions>', "\n";
+	my @condition = map {$_->dump()} grep{$_->{type} eq 'condition'} @objs;
+	print DEF $imprint;
+	print DEF XMLout({condition => \@condition}, RootName => "conditions", SuppressEmpty => 1);
 	close DEF;
 }
 
@@ -588,17 +511,9 @@ if ( not $outtype or $outtype eq 'validator' ) {
 	my $defName = $outfile
 		|| 'workflow_validator_' . lc($descPrefix) . '.xml';
 	open( DEF, ">$defName" ) or die "Error opening $defName: $!";
-	my $indent = 0;
-	print DEF $imprint, "\n";
-	print DEF $indentSpace x $indent, '<validators>', "\n\n";
-	$indent++;
-
-	foreach my $rec ( grep{defined($_->{type}) && $_->{type} eq 'validator'}  @objs) {
-		print DEF $rec->dump($indent), "\n";
-		}
-		
-	$indent--;
-	print DEF $indentSpace x $indent, '</validators>', "\n";
+	my @validator = map {$_->dump()} grep{$_->{type} eq 'validator'} @objs;
+	print DEF $imprint;
+	print DEF XMLout({validator => \@validator}, RootName => "validators", SuppressEmpty => 1);
 	close DEF;
 }
 
@@ -607,30 +522,14 @@ if ( not $outtype or $outtype eq 'states' ) {
 	my $defName = $outfile
 		|| 'workflow_def_' . lc($descPrefix) . '.xml';
 	open( DEF, ">$defName" ) or die "Error opening $defName: $!";
-	my $indent = 0;
-	print DEF $imprint, "\n";
-	print DEF $indentSpace x $indent, '<workflow>', "\n";
-		$indent++;
-		print DEF $indentSpace x $indent, '<type>',
-			$i18nPrefix, '_TYPE_', uc($descPrefix),
-			'</type>', "\n";
-		print DEF $indentSpace x $indent, '<description>',
-			$i18nPrefix, '_DESC_', uc($descPrefix),
-			'</description>', "\n";
-		print DEF $indentSpace x $indent,
-			'<persister>OpenXPKI</persister>',
-			"\n\n";
-
-	#this one greps every unique state
-	my %seen;
-	my @unique = grep{$_->{type} eq 'state' &&
-					! $seen{$_->{name}}++ } @objs;
-
-	foreach my $rec (@unique) {
-		print DEF $rec->dump($indent), "\n";
-	}
-		
-	$indent--;
-	print DEF $indentSpace x $indent, '</workflow>', "\n";
+	my @states = map {$_->dump()} grep{$_->{type} eq 'state'} @objs;
+	my %def = (
+			type 		=> $i18nPrefix.'_TYPE_'.uc($descPrefix),
+			description	=> $i18nPrefix.'_DESC_'.uc($descPrefix),,
+			persister	=> "OpenXPKI",
+			state		=> \@states
+	);
+	print DEF $imprint;
+	print DEF XMLout(\%def, RootName => "Workflow", SuppressEmpty => 1);
 	close DEF;
 }

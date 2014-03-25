@@ -20,7 +20,13 @@ no Moose;
 
 sub dump {
 	my $self = shift;
-	my $actionname = $descPrefix."_".$self->{name};
+	my $actionname;
+	if ( $self->{name} !~ /^global/) {	
+		$actionname = $descPrefix."_".$self->{name};
+	}
+	else {
+		$actionname = $self->{name};
+	}
 	my $resState = uc($self->{resState});
 	$actionname =~ s/\s/_/g;
 	$resState =~ s/\s/_/g;
@@ -44,6 +50,8 @@ has description => (is => 'rw',);
 has action => (is => 'rw', isa => 'ArrayRef');
 has counter => (is => 'rw', default => 1);
 has autorun => (is => 'rw');
+has message => (is => 'rw');
+has uihandle => (is => 'rw');
 no Moose;
 
 sub dump {
@@ -56,8 +64,10 @@ sub dump {
     my %state =  (
 		name	   		=>	$name,
 		autorun			=>	$self->{autorun},
-		description		=>	$description,
-		action			=>	\@actions
+		description		=>	[$description],
+		message			=>	$self->{message},
+		action			=>	\@actions,
+		uihandle		=>	$self->{uihandle},
 	);
     return \%state;
 }
@@ -73,14 +83,38 @@ has params => (is => 'rw', isa => 'ArrayRef');
 no Moose;
 
 sub dump {
-	my $self = shift;	
-	my $name = $namespace . '_' . $self->{name};
+	my $self = shift;
+	my %validator;
+	if ( $self->{name} !~ /^global/) {	
+		my $name = $namespace . '_' . $self->{name};
+		$name =~ s/\s/_/g;
+		$name =~ s/\?//g;
+		%validator =  (
+			name	   		=>	$name,
+			class			=>	$self->{class},
+			param			=>	$self->{params},
+		);
+		return \%validator;
+	}
+	else {
+		return;
+	}
+}
+
+sub dump_action {
+	my $self = shift;
+	my $name;
+	if ( $self->{name} !~ /^global/) {	
+		$name = $namespace . '_' . $self->{name};
+	}
+	else {
+		$name = $self->{name};
+	}
 	$name =~ s/\s/_/g;
 	$name =~ s/\?//g;
 	my %validator =  (
 		name	   		=>	$name,
-		class			=>	$self->{class},
-#		param			=>	$self->params,
+		arg				=>	$self->{args},
 	);
     return \%validator;
 }
@@ -91,29 +125,26 @@ has type => (is => 'ro', default => 'condition');
 has name => (is => 'rw',);
 has id => (is => 'rw',);
 has class => (is => 'rw',);
-has plist => (is => 'rw', isa => 'HashRef');
 has targetRef => (is => 'rw', isa => 'ArrayRef');
 has default => (is => 'rw',);
 no Moose;
 
 sub dump {
 	my $self = shift;
-	my $class = "Workflow::Action::Null";
-	if ( defined ($self->{class}) ) {
-		$class = $self->{class};
+	my $class = (defined $self->{class}) ? $self->{class} : "Workflow::Action::Null";	
+	my $name = $self->{name};
+	if ( $name !~ /^global/) {
+		$name =~ s/\s/_/g;
+		$name =~ s/\?//g;
+		my %condition =  (
+			name	   		=>	$name,
+			class			=>	$self->{class},
+		);
+		return \%condition;
 	}
-	
-	my $name = $namespace . '_' . $self->{name};
-	$name =~ s/\s/_/g;
-	$name =~ s/\?//g;
-	my %condition =  (
-		name	   		=>	$name,
-		class			=>	$self->{class},
-	);
-	#~ while( my ($k, $v) = each %{$self->{plist}} ) {
-		#~ push @out, $indentSpace x $indent , "<param name=", '"', "$k", '" ', "value=", '"', "$v", '"', " />", "\n";
-	#~ }
-	return \%condition;
+	else {
+		return;
+	}
 }
 
 package ObjAction;
@@ -122,44 +153,39 @@ has type => (is => 'ro', default => 'action');
 has name => (is => 'rw',);
 has id => (is => 'rw',);
 has class => (is => 'rw',);
+has request_type => (is => 'rw',);
 has description => (is => 'rw');
 has params => (is => 'rw', isa => 'ArrayRef');
 has validators => (is => 'rw', isa => 'ArrayRef');
 has condition => (is => 'rw',);
 has targetRef => (is => 'rw',);
+has uihandle => (is => 'rw',);
 no Moose;
 
 sub dump {
 	my $self = shift;
 	my $class = $self->{class} || "Workflow::Action::Null";
-	my @params = ();
-	my $name = $namespace . '_' . $self->{name};
-	$name =~ s/\s/_/g;
-	
-	my @validator = map {$_->dump()} grep defined, @{$self->{validators}};
-    my %action =  (
-		name	   		=>	$name,
-		class			=>	$class,
-#		field			=>	$self->params,
-		validator		=>	\@validator
-	);
-	
-	#~ foreach my $param(@params) {
-		#~ push @out, $indentSpace x ($indent + 1) , "<field ", $param, "/>", "\n";
-	#~ }
-
-	#~ foreach (@{$self->{validators}}) {
-		#~ push @out, $indentSpace x ($indent + 1) , '<validator name="', $namespace . '_' . $_->{name}, '"', ">", "\n";
-		#~ if (defined $_->{args}) {
-			#~ foreach (@{$_->{args}}) {
-				#~ push @out, $indentSpace x ($indent + 2) , "<arg>", $_, "</arg>", "\n";
-			#~ }
-		#~ push @out, $indentSpace x ($indent + 1) , "</validator>", "\n";
-		#~ }
-	#~ }
-	#~ 
-	#~ push @out, $indentSpace x $indent, "</action>", "\n";
-	return \%action;
+	my $name;
+	if ( $self->{name} !~ /^global/) {	
+		my $name = $namespace . '_' . $self->{name};
+		$name =~ s/\s/_/g;
+		
+		my @validator = map {$_->dump_action()} grep defined, @{$self->{validators}};
+		my %action =  (
+			name	   		=>	$name,
+			class			=>	$class,
+			uihandle		=>	$self->{uihandle},		
+			description		=>	$self->{description},
+			request_type	=>	$self->{request_type},
+			field			=>	$self->{params},
+			validator		=>	\@validator,
+		);
+		
+		return \%action;
+	}
+	else {
+		return;
+	}
 }
 
 package ObjRef;
@@ -359,17 +385,40 @@ sub parseTask {
 	my $object = ObjAction->new;
 	$object->id($task->{id});
 	$object->name($task->{name});
-	$object->class($task->{property}->[0]->{name});
+	$object->class($task->{property}->[0]->{name});	
 	$object->targetRef($task->{outgoing}->[0]);
 	$object->description($task->{documentation}->[0]->{content});
+
+	foreach (@{$task->{property}}) {
+		if (defined $_->{name}) {
+			$_ = $_->{name};
+			if (/^class\s.+/ && s/^class\s//) {
+				$object->class($_);
+			}
+			elsif (/^request_type\s.+/ && s/^request_type\s//) {
+				$object->request_type($_);
+			}
+			elsif (/^uihandle\s.+/ && s/^uihandle\s//) {
+				$object->uihandle($_);
+			}
+			else {
+				die "Task properties has to start with 'class', uihandle or 'request_type' but starts with '", $_, "'";
+			}
+		}
+	}
+	
 	if (defined $task->{dataOutputAssociation}) {
 		foreach my $validator (@{$task->{dataOutputAssociation}}) {
 			push @{$object->{validators}}, getElementById($validator->{targetRef}->[0]);
 		}	
 	}
-	#this will just pipe the params of the task
-	foreach my $param (@{$task->{ioSpecification}->[0]->{dataInput}}) {
-		push @{$object->{params}}, $param->{name};
+	
+	foreach (@{$task->{ioSpecification}->[0]->{dataInput}}) {
+		#input format "key1 value1|key2 value2"
+		#output data structure {key1 => value1, key2 => value2}
+		my @params = split /\|/, $_->{name};
+		my %hash = map {(split / /, $_)[0] => (split / /, $_)[1]} @params;
+		push @{$object->{params}}, \%hash;		
 	}
 	push @objs, $object;
 }
@@ -391,9 +440,17 @@ sub parseEvent {
 	$object->name($name);
 	$object->targetRef($event->{outgoing});
 	if (defined $event->{property}) {
-		my $autorun = $event->{property}->[0]->{name};
-		if ($autorun eq "autorun yes") {
-			$object->autorun("yes");
+		foreach (@{$event->{property}}) {
+			$_ = $_->{name};		
+			if (/^uihandle\s.+/ && s/^uihandle\s//) {
+				$object->uihandle($_);
+			}
+			elsif (/^message\s.+/ && s/^message\s//) {
+				$object->message($_);
+			}
+			elsif ($_ eq "autorun yes") {
+				$object->autorun("yes");
+			}
 		}
 	}
 
@@ -407,19 +464,18 @@ sub parseGateway {
 	my $object = ObjCondition->new;
 	$object->id($id);
 	$object->name($name);
-	$object->plist({});
 	$object->targetRef($gateway->{outgoing});
 	$object->default($gateway->{default});
 	
-	foreach my $param (@{$gateway->{documentation}}) {
-		my ($param1, $param2) = split / /, $param->{content}, 2;
+	foreach (@{$gateway->{documentation}}) {
+		my ($param1, $param2) = split / /, $_->{content}, 2;
 		if ($param1 eq 'class') {
 			$object->class($param2);
 		}
-		elsif ($param1 eq 'name') {
-			my ($name, $value) = split /name |; value /, $param2, 2;
-			${$object->plist}{$name} = $value;
-		}
+		#~ elsif ($param1 eq 'name') {
+			#~ my ($name, $value) = split /name |; value /, $param2, 2;
+			#~ ${$object->plist}{$name} = $value;
+		#~ }
 		else {
 			die "Gateway documentation has to start with 'class' or 'name'";
 		}
@@ -438,7 +494,11 @@ sub parseIo {
 		my ($key, $value) = split(/ /,$param->{content}, 2);
 		if ($key eq 'arg') {push @{$object->{args}}, $value}
 		elsif ($key eq 'class') {$object->class($value);}
-		elsif ($key eq 'param') {push @{$object->{params}}, $value;}	
+		elsif ($key eq 'param') {
+			my @params = split /\|/, $value;
+			my %hash = map {(split / /, $_)[0] => (split / /, $_)[1]} @params;
+			push @{$object->{params}}, \%hash;
+		}	
 		else {die $key, "does not match any valid validador parameter";}
 	}
 
@@ -524,9 +584,9 @@ if ( not $outtype or $outtype eq 'states' ) {
 	open( DEF, ">$defName" ) or die "Error opening $defName: $!";
 	my @states = map {$_->dump()} grep{$_->{type} eq 'state'} @objs;
 	my %def = (
-			type 		=> $i18nPrefix.'_TYPE_'.uc($descPrefix),
-			description	=> $i18nPrefix.'_DESC_'.uc($descPrefix),,
-			persister	=> "OpenXPKI",
+			type 		=> [$i18nPrefix.'_TYPE_'.uc($descPrefix)],
+			description	=> [$i18nPrefix.'_DESC_'.uc($descPrefix)],
+			persister	=> ["OpenXPKI"],
 			state		=> \@states
 	);
 	print DEF $imprint;
